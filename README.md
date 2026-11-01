@@ -88,6 +88,7 @@ container on x86_64:
 
     --registered            enable registered speeds (must set build flag)
 
+    --retries N             connect attempts (1-255, default: 15 HF, 10 FM)
     --digi CALL             FM digipeat for CALL (default: off)
     --record PATH           record rx, tx and PTT to FLAC (or WAV if .wav)
     --log FILE              append UTC-timestamped output to FILE

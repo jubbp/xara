@@ -49,6 +49,7 @@ struct Args {
     port: u16,
     kiss_port: Option<u16>,
     persistence: f64,
+    retries: Option<u8>,
     addr: String,
     drive_db: f64,
     quiet: bool,
@@ -86,6 +87,7 @@ fn defaults() -> Args {
         port: 8300,
         kiss_port: Some(xara_host::kiss::DEFAULT_PORT),
         persistence: xara_arq::hf::broadcast::DEFAULT_PERSISTENCE,
+        retries: None,
         addr: xara::DEFAULT_ADDR.into(),
         drive_db: DEFAULT_DRIVE_DB,
         quiet: false,
@@ -141,6 +143,10 @@ fn take(a: &mut Args, k: &str, mut v: impl FnMut() -> Result<String, String>) ->
             }
         }
         "--persistence" => a.persistence = finite(k, &v()?)?.clamp(0.0, 1.0),
+        "--retries" => match num(k, &v()?)? {
+            0 => return Err("--retries must be 1-255".into()),
+            n => a.retries = Some(n),
+        },
         "--addr" => a.addr = v()?,
         "--drive-db" => a.drive_db = finite(k, &v()?)?,
         "--quiet" => a.quiet = true,
@@ -497,6 +503,7 @@ fn run(
         Some(bw) => {
             let mut cfg = fm::Config::new(bw, &a.call);
             cfg.host.registered = a.registered;
+            cfg.host.retries = a.retries.map_or(cfg.host.retries, u32::from);
             let mut station = station::fm::Station::new(cfg, opts);
             station.set_digipeater(&a.digi);
             if !a.digi.is_empty() {
@@ -510,6 +517,7 @@ fn run(
                 ..hf::Config::new(a.bw, &a.call)
             };
             cfg.host.registered = a.registered;
+            cfg.host.retries = a.retries.map_or(cfg.host.retries, u32::from);
             let mut station = station::hf::Station::new(cfg, opts);
             station.set_persistence(a.persistence);
             serve(a, io, tx, Tnc::new(station, host), settings, stop, rec)
@@ -949,6 +957,19 @@ mod tests {
         assert_eq!((tx_buffer(&a).target, tx_buffer(&a).capacity()), (4800, 19200));
         let p = conf("conf-tx-buffer", "tx-buffer-ms = 60\n");
         assert_eq!(config_args(&p).unwrap(), argv("--tx-buffer-ms 60"));
+        std::fs::remove_dir_all(p.parent().unwrap()).unwrap();
+    }
+
+    #[test]
+    fn retries_come_from_the_command_line_or_a_config() {
+        let b = |s: &str| parse(&argv(&format!("--call N2CALL --capture c --playback p {s}")));
+        assert_eq!(b("").unwrap().unwrap().retries, None);
+        assert_eq!(b("--retries 30").unwrap().unwrap().retries, Some(30));
+        for bad in ["0", "256", "-1", "x"] {
+            assert!(b(&format!("--retries {bad}")).is_err(), "{bad}");
+        }
+        let p = conf("conf-retries", "retries = 5\n");
+        assert_eq!(config_args(&p).unwrap(), argv("--retries 5"));
         std::fs::remove_dir_all(p.parent().unwrap()).unwrap();
     }
 
