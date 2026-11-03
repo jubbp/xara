@@ -1,0 +1,81 @@
+# xara im Container. Aufruf aus diesem Verzeichnis (docker/):
+#
+#   cp xara.conf.example xara.conf      # und anpassen
+#   docker compose --profile unregistered up -d --build
+#   docker compose --profile registered   up -d --build
+#
+# WICHTIG: Beide Varianten nutzen dieselben Host-Ports und denselben State.
+# Es darf immer nur EIN Profil laufen. Vor dem Wechsel:
+#   docker compose --profile unregistered down   (bzw. --profile registered)
+
+x-xara-common: &xara-common
+  restart: unless-stopped
+  init: true
+  stop_grace_period: 10s
+  environment:
+    TZ: ${TZ:-Europe/Berlin}
+    # PulseAudio/PipeWire (Alternative zu ALSA, siehe unten):
+    # PULSE_SERVER: unix:/run/pulse/native
+  volumes:
+    - ./xara.conf:/config/xara.conf:ro
+    - xara-state:/state
+    # PulseAudio/PipeWire statt ALSA: Socket durchreichen, /dev/snd entfernen,
+    # in der xara.conf "audio = pulse" setzen und unten "user:" aktivieren.
+    # - ${XDG_RUNTIME_DIR}/pulse/native:/run/pulse/native
+  devices:
+    - /dev/snd:/dev/snd
+    # PTT-Geraete (nur die benoetigten einkommentieren):
+    # - /dev/hidraw0:/dev/hidraw0                       # cm108 / AIOC
+    # - /dev/ttyUSB0:/dev/ttyUSB0                       # rts / dtr
+    # - /dev/serial/by-id/usb-XXXX-if00:/dev/serial/by-id/usb-XXXX-if00
+  # Host-GIDs koennen von denen im Image abweichen. Ggf. numerische GIDs
+  # des Hosts eintragen (getent group audio dialout plugdev), siehe README.md / README.de.md.
+  group_add:
+    - audio
+    - dialout
+    - plugdev
+  # Nur fuer PulseAudio/PipeWire: Container-User = Host-User (UID muss das
+  # Socket lesen duerfen; "export UID GID" bzw. feste Zahlen verwenden).
+  # user: "${UID}:${GID}"
+  #
+  # Ports nur auf localhost. KISS (8100) und Command-/Datenport (8300/8301)
+  # sind NICHT authentifiziert, ui-control erlaubt Token-Inhabern das Senden.
+  # Fuer LAN-Zugriff "127.0.0.1:" entfernen (alle Interfaces) oder durch die
+  # LAN-IP des Hosts ersetzen, z. B. "192.168.1.10:8300:8300".
+  ports:
+    - "127.0.0.1:8300:8300"   # VARA-Command
+    - "127.0.0.1:8301:8301"   # VARA-Data (immer Command-Port + 1)
+    - "127.0.0.1:8100:8100"   # KISS
+    - "127.0.0.1:8080:8080"   # Web-UI (nur wenn ui-port gesetzt)
+  healthcheck:
+    test: ["CMD", "bash", "-c", "exec 3<>/dev/tcp/127.0.0.1/8300"]
+    interval: 30s
+    timeout: 5s
+    retries: 3
+    start_period: 15s
+
+services:
+  xara:
+    <<: *xara-common
+    profiles: ["unregistered"]
+    image: xara:latest
+    container_name: xara
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+      args:
+        REGISTERED: "false"
+
+  xara-registered:
+    <<: *xara-common
+    profiles: ["registered"]
+    image: xara:registered
+    container_name: xara
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+      args:
+        REGISTERED: "true"
+
+volumes:
+  xara-state:

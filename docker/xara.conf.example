@@ -1,0 +1,90 @@
+# xara im Docker-Container. Kopieren nach docker/xara.conf und anpassen:
+#
+#   cp xara.conf.example xara.conf
+#
+# Syntax: "schluessel = wert", Schalter ohne Wert (ui-control) oder mit
+# "= yes|no|on|off|true|false". Kommentare mit #.
+#
+# Im Container muessen die Listener auf 0.0.0.0 lauschen, sonst funktioniert
+# das Port-Publishing von Docker nicht. Wer den Zugriff von aussen
+# einschraenkt, tut das in docker-compose.yml (ports: "127.0.0.1:...").
+
+###
+# Rufzeichen (Pflicht)
+
+#call = YOURCALL
+
+###
+# HF oder FM (eins waehlen)
+
+# HF: hf = 500, 2300 oder 2750
+# FM: fm = narrow oder wide
+#hf = 2300
+#fm = narrow
+
+###
+# Audio: ALSA (Standard im Container)
+# Geraete auflisten:
+#   docker compose run --rm xara --list-devices --audio alsa
+
+audio = alsa
+#capture = plughw:CARD=Device,DEV=0
+#playback = plughw:CARD=Device,DEV=0
+
+# Alternativ PulseAudio/PipeWire (siehe docker-compose.yml, Socket mounten):
+#audio = pulse
+#capture = alsa_input.usb-XXXX
+#playback = alsa_output.usb-XXXX
+
+# TX-Audio-Queue in ms, erhoehen bei Playback-Underruns
+#tx-buffer-ms = 40
+
+###
+# Radio und PTT (Geraet muss in docker-compose.yml durchgereicht werden)
+
+#radio = on
+#drive-db = -10
+
+# CM108/AIOC per USB-ID (stabil, braucht trotzdem /dev/hidrawN im Container)
+#ptt = cm108:1209:7388
+# oder per Pfad
+#ptt = cm108:/dev/hidraw0
+# RTS/DTR auf USB-Seriell
+#ptt = dtr:/dev/serial/by-id/usb-XXXX-if00
+#ptt = rts:/dev/ttyUSB0
+
+###
+# Ports im Container (Compose published 8300, 8301, 8100, 8080 unveraendert)
+
+addr = 0.0.0.0
+#port = 8300
+#kiss-port = 8100
+
+###
+# Web-UI
+
+ui-port = 8080
+ui-addr = 0.0.0.0
+
+# xara akzeptiert als HTTP-Host nur IP-Adressen, localhost, *.local und den
+# Hostnamen des Containers (= Container-ID). Greift man ueber einen anderen
+# Namen zu (z. B. http://shack.example.org:8080), diesen hier eintragen
+# (mehrfach moeglich), sonst kommt "403 Host not allowed":
+#ui-host = shack.example.org
+
+# WARNUNG: erlaubt jedem mit Token, den Sender zu tasten.
+# Token steht im Log und im State-Volume (/state/ui-token).
+#ui-control
+# Feste Token (8-128 Zeichen A-Za-z0-9-_), sonst zufaellig und gespeichert:
+#ui-token = ...
+
+###
+# NICHT hier eintragen: "registered".
+# Das registrierte Image (xara:registered, Compose-Profil "registered")
+# uebergibt --registered automatisch. Im unregistrierten Image fuehrt
+# "registered" in dieser Datei zum Startfehler ("not built with registered
+# features"). Zusammen mit dem automatischen Flag waere es doppelt, aber
+# harmlos (Schalter wird nur auf true gesetzt, kein Fehler).
+#
+# Ebenfalls nicht erlaubt in der Datei: config, list-devices.
+# state-dir wird vom Entrypoint gesetzt (/state), nicht hier setzen.

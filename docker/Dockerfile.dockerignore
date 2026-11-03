@@ -1,0 +1,15 @@
+target/
+**/target/
+.git/
+.github/
+.config/
+vectors/
+scripts/
+dist/
+docker/
+!docker/entrypoint.sh
+*.flac
+*.wav
+.gitignore
+*.md
+!README.md
