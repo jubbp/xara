@@ -523,6 +523,11 @@ impl Modem for Station {
         self.c.session.reset_timing();
     }
 
+    fn set_cwid(&mut self, on: bool) -> bool {
+        self.update(|c| c.cwid = on);
+        true
+    }
+
     fn set_kiss_rx(&mut self, on: bool) {
         self.un.bc.kiss_rx = on;
     }

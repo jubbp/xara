@@ -233,6 +233,30 @@ fn failed_call_and_failed_incoming() {
 }
 
 #[test]
+fn cwid_follows_the_host() {
+    let failed_call = |mycall: &str, cwid: &[&str]| {
+        let mut lab = Lab::new(1);
+        let mut c = lab.attach(0);
+        lab.settle();
+        for l in [format!("MYCALL {mycall}").as_str(), "BW2300", "RETRIES 2"].iter().chain(cwid) {
+            assert_eq!(ask(&mut lab, &mut c, format!("{l}\r").as_bytes(), 1), ["OK"], "{l}");
+        }
+        let start = c.len();
+        c.send(&format!("CONNECT {mycall} N1CALL"));
+        let cl = c.lines.clone();
+        assert!(lab.run_until(30.0, |_| cl.lock().unwrap()[start..].iter().any(|l| l == "DISCONNECTED")));
+        lab.settle();
+        (c.since(start).iter().filter(|l| *l == "PTT ON").count(), lab.tnc[0].station().config().cwid)
+    };
+    // two connect requests, then the CW ID if there is one; XX0A is not a US call
+    assert_eq!(failed_call("XX0A", &[]), (2, false));
+    assert_eq!(failed_call("XX0A", &["CWID ON"]), (3, true));
+    assert_eq!(failed_call("XX0A", &["CWID ON", "CWID OFF"]), (2, false));
+    assert_eq!(failed_call("N0CALL", &[]), (3, false));
+    assert_eq!(failed_call("N0CALL", &["CWID OFF"]), (3, false));
+}
+
+#[test]
 fn registered_and_iamalive() {
     let mut lab = Lab::new(1);
     let mut c = lab.attach(0);
