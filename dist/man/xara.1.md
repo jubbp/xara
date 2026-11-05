@@ -100,7 +100,7 @@ along with KISS for applications such as Pat. See the README for full details.
 
 **--drive-db** *D*
 
-:   TX drive in dB, at most 0 (default -5).
+:   TX drive in dB, from -30 to 0 (default -5).
 
 **--log** *FILE*
 :   Append UTC-timestamped output to *FILE*.

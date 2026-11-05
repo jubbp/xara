@@ -14,6 +14,7 @@ use xara::signals;
 use xara::station::{self, DEFAULT_DRIVE_DB, Modem, Options};
 use xara::tnc::Tnc;
 use xara_arq::{fm, hf};
+use xara_host::command::DRIVE_MIN_DB;
 use xara_host::kiss::KissServer;
 use xara_host::server::Host;
 use xara_phy::fm::level::FmBandwidth;
@@ -226,8 +227,8 @@ fn check(a: &Args) -> Result<(), String> {
     if !a.digi.is_empty() && a.fm.is_none() {
         return Err("--digi needs --fm".into());
     }
-    if a.drive_db > 0.0 {
-        return Err("--drive-db must be <= 0".into());
+    if !(DRIVE_MIN_DB..=0.0).contains(&a.drive_db) {
+        return Err(format!("--drive-db must be between {DRIVE_MIN_DB} and 0"));
     }
     if a.tx_buffer_ms.is_some_and(|n| !(ratematch::MIN_MS..=ratematch::MAX_MS).contains(&n)) {
         return Err(format!("--tx-buffer-ms must be {}..{}", ratematch::MIN_MS, ratematch::MAX_MS));
@@ -859,6 +860,18 @@ mod tests {
         assert_eq!(with_saved(&null, &kv(&[("capture", "-h")]), false).unwrap().capture, "-h");
         assert!(with_saved(&null, &kv(&[("call", "--help")]), false).is_err_and(|e| e.contains("bad call")));
         assert!(with_saved(&argv("--call N2CALL --capture c --playback p -h"), &Pairs::new(), false).is_err());
+    }
+
+    #[test]
+    fn drive_db_stays_in_the_tune_range() {
+        let null = argv("--call N2CALL --capture c --playback xara_tx");
+        let drive = |db| with_saved(&null, &kv(&[("drive-db", db)]), false);
+        for bad in ["-30.5", "-300", "0.5"] {
+            assert!(drive(bad).is_err_and(|e| e.contains("--drive-db")), "{bad}");
+        }
+        for ok in ["-30", "0", "-5"] {
+            assert!(drive(ok).is_ok(), "{ok}");
+        }
     }
 
     #[test]
