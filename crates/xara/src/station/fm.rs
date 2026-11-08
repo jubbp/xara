@@ -527,6 +527,10 @@ impl Modem for Station {
 
     fn set_p2p(&mut self, _: bool) {}
 
+    fn set_cwid(&mut self, _: bool) -> bool {
+        false
+    }
+
     fn set_kiss_rx(&mut self, on: bool) {
         self.kiss_rx = on;
         self.refresh_listen();

@@ -446,7 +446,8 @@ impl<M: Modem> Tnc<M> {
                 true
             }
             Command::Bw(b) => idle && self.station.set_bw(b),
-            Command::Gateway | Command::Cwid(_) => M::CWID_GATEWAY,
+            Command::Gateway => M::CWID_GATEWAY,
+            Command::Cwid(on) => self.station.set_cwid(on),
             Command::Public(_) => true,
             Command::TuneOff => {
                 self.stop_tune();

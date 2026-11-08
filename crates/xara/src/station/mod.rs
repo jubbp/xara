@@ -135,6 +135,7 @@ pub trait Modem {
     fn set_ignore_dcd(&mut self, on: bool);
     fn set_bw(&mut self, bw: Bw) -> bool;
     fn set_p2p(&mut self, on: bool);
+    fn set_cwid(&mut self, on: bool) -> bool;
     fn set_kiss_rx(&mut self, on: bool);
 
     fn drain(&mut self) {
