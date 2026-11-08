@@ -1,5 +1,9 @@
 # Changelog
 
+## unreleased
+
+- bugfix: rigctld PTT keeps retrying the unkey for 20 s when the CAT link drops
+
 ## 0.1.3
 
 - macOS / CoreAudio support thanks to NR5P's work in x0rro/xara#19
