@@ -1,0 +1,90 @@
+# xara in a Docker container. Copy to docker/xara.conf and adjust:
+#
+#   cp xara.conf.example xara.conf
+#
+# Syntax: "key = value"; switches either without a value (ui-control) or
+# with "= yes|no|on|off|true|false". Comments start with #.
+#
+# Inside the container the listeners must bind to 0.0.0.0, otherwise Docker
+# port publishing doesn't work. Restrict outside access in
+# docker-compose.yml instead (ports: "127.0.0.1:...").
+
+###
+# call sign (required)
+
+#call = YOURCALL
+
+###
+# HF or FM (pick one)
+
+# HF: hf = 500, 2300 or 2750
+# FM: fm = narrow or wide
+#hf = 2300
+#fm = narrow
+
+###
+# audio: ALSA (default in the container)
+# list devices:
+#   docker compose run --rm xara --list-devices --audio alsa
+
+audio = alsa
+#capture = plughw:CARD=Device,DEV=0
+#playback = plughw:CARD=Device,DEV=0
+
+# alternatively PulseAudio/PipeWire (see docker-compose.yml, mount the socket):
+#audio = pulse
+#capture = alsa_input.usb-XXXX
+#playback = alsa_output.usb-XXXX
+
+# TX audio queue in ms, raise it on playback underruns
+#tx-buffer-ms = 40
+
+###
+# radio and PTT (the device must be passed through in docker-compose.yml)
+
+#radio = on
+#drive-db = -10
+
+# CM108/AIOC by USB id (stable, but still needs /dev/hidrawN in the container)
+#ptt = cm108:1209:7388
+# or by path
+#ptt = cm108:/dev/hidraw0
+# RTS/DTR on a USB serial port
+#ptt = dtr:/dev/serial/by-id/usb-XXXX-if00
+#ptt = rts:/dev/ttyUSB0
+
+###
+# ports inside the container (compose publishes 8300, 8301, 8100, 8080 unchanged)
+
+addr = 0.0.0.0
+#port = 8300
+#kiss-port = 8100
+
+###
+# web UI
+
+ui-port = 8080
+ui-addr = 0.0.0.0
+
+# xara only accepts IP addresses, localhost, *.local and the container's
+# hostname (= container id) as HTTP Host. If you use another name (e.g.
+# http://shack.example.org:8080), add it here (repeatable), otherwise you
+# get "403 Host not allowed":
+#ui-host = shack.example.org
+
+# WARNING: allows anyone with the token to key the transmitter.
+# The token is logged and stored in the state volume (/state/ui-token).
+#ui-control
+# fixed token (8-128 chars A-Za-z0-9-_), otherwise random and stored:
+#ui-token = ...
+
+###
+# Do NOT set "registered" here.
+# The registered image (xara:registered, compose profile "registered")
+# passes --registered automatically. In the unregistered image, "registered"
+# in this file makes xara fail at startup ("not built with registered
+# features"). Combined with the automatic flag it would be redundant but
+# harmless (the switch is just set to true, no error).
+#
+# Also not allowed in this file: config, list-devices.
+# state-dir is set by the entrypoint (/state), don't set it here.
