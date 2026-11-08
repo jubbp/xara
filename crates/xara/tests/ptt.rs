@@ -5,7 +5,7 @@ use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::{Duration, Instant};
 use xara::audio::TxAudio;
-use xara::ptt::{Cm108, Event, Ptt, PttCtl, PttSpec, PttTiming, Rigctld, Serial, cm108_report};
+use xara::ptt::{Cm108, Event, Flrig, Ptt, PttCtl, PttSpec, PttTiming, Rigctld, Serial, cm108_report};
 
 #[test]
 fn ptt_spec_parse() {
@@ -25,6 +25,8 @@ fn ptt_spec_parse() {
     assert_eq!(PttSpec::parse("cm108:0D8C:013A:8"), usb(0x0d8c, 0x013a, 8));
     assert_eq!(PttSpec::parse("rigctld"), Ok(PttSpec::Rigctld("127.0.0.1:4532".into())));
     assert_eq!(PttSpec::parse("rigctld:radio.lan:4533"), Ok(PttSpec::Rigctld("radio.lan:4533".into())));
+    assert_eq!(PttSpec::parse("flrig"), Ok(PttSpec::Flrig("127.0.0.1:12345".into())));
+    assert_eq!(PttSpec::parse("flrig:radio.lan:12346"), Ok(PttSpec::Flrig("radio.lan:12346".into())));
     let e = PttSpec::parse("vax").unwrap_err();
     assert!(e.contains("cm108:VID:PID") || e.contains("|VID:PID"), "{e}");
     assert_eq!(e.contains("cm108:DEV"), !cfg!(target_os = "macos"), "{e}");
@@ -172,6 +174,65 @@ fn rigctld_protocol() {
     let addr = l.local_addr().unwrap().to_string();
     drop(l);
     assert!(Rigctld::open(&addr).is_err());
+}
+
+// A minimal flrig XML-RPC server: reads one HTTP POST per connection, logs the
+// requested PTT state, and answers with a methodResponse (or a fault).
+fn fake_flrig(fault: bool) -> (String, Arc<Mutex<Vec<String>>>) {
+    let l = TcpListener::bind("127.0.0.1:0").unwrap();
+    let addr = l.local_addr().unwrap().to_string();
+    let log = Arc::new(Mutex::new(Vec::new()));
+    let log2 = log.clone();
+    thread::spawn(move || {
+        for s in l.incoming() {
+            let Ok(mut s) = s else { break };
+            let mut r = BufReader::new(s.try_clone().unwrap());
+            let mut len = 0usize;
+            loop {
+                let mut line = String::new();
+                if r.read_line(&mut line).unwrap() == 0 {
+                    return;
+                }
+                if let Some(n) = line.to_ascii_lowercase().strip_prefix("content-length:") {
+                    len = n.trim().parse().unwrap();
+                }
+                if line == "\r\n" {
+                    break;
+                }
+            }
+            let mut body = vec![0u8; len];
+            r.read_exact(&mut body).unwrap();
+            let on = String::from_utf8(body).unwrap().contains("<i4>1</i4>");
+            log2.lock().unwrap().push(format!("ptt={}", on as u8));
+            let xml = if fault {
+                "<?xml version=\"1.0\"?><methodResponse><fault><value><struct/></value></fault></methodResponse>"
+            } else {
+                "<?xml version=\"1.0\"?><methodResponse><params><param><value><i4>0</i4></value></param></params></methodResponse>"
+            };
+            let resp = format!("HTTP/1.1 200 OK\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{xml}", xml.len());
+            let _ = s.write_all(resp.as_bytes());
+        }
+    });
+    (addr, log)
+}
+
+#[test]
+fn flrig_protocol() {
+    let (addr, log) = fake_flrig(false);
+    let mut f = Flrig::open(&addr).unwrap();
+    f.set(true).unwrap();
+    f.set(false).unwrap();
+    assert_eq!(*log.lock().unwrap(), ["ptt=0", "ptt=1", "ptt=0"]);
+
+    // a fault response fails the keying (open calls set(false), so open fails)
+    let (addr, _) = fake_flrig(true);
+    assert!(Flrig::open(&addr).is_err());
+
+    // nothing listening
+    let l = TcpListener::bind("127.0.0.1:0").unwrap();
+    let addr = l.local_addr().unwrap().to_string();
+    drop(l);
+    assert!(Flrig::open(&addr).is_err());
 }
 
 #[derive(Clone, Default)]

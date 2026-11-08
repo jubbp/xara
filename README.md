@@ -101,6 +101,7 @@ we support the following PTT methods:
  - rts and dtr on a serial port
  - cm108/cm119 HID GPIO
  - hamlib rigctld CAT
+ - flrig CAT (XML-RPC)
  - vox (not recommended)
 
 you can adjust the following PTT settings as well:
@@ -117,6 +118,7 @@ summary of settings:
     --ptt cm108:DEV[:GPIO]      cm108/cm119 HID GPIO (default GPIO: 3)
     --ptt cm108:VID:PID[:GPIO]  cm108/cm119 by hex USB id (stable across boots)
     --ptt rigctld[:HOST:PORT]   hamlib rigctld CAT on HOST:PORT
+    --ptt flrig[:HOST:PORT]     flrig XML-RPC CAT (default 127.0.0.1:12345)
 
     --ptt-lead-ms N             PTT held for N ms before xmit (default: 0)
     --ptt-tail-ms N             PTT held for N ms after xmit (default: 100)

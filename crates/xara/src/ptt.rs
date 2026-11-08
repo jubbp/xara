@@ -1,6 +1,6 @@
 use std::cell::Cell;
 use std::fs::{File, OpenOptions};
-use std::io::{self, BufRead, BufReader, IsTerminal, Write};
+use std::io::{self, BufRead, BufReader, IsTerminal, Read, Write};
 use std::net::{TcpStream, ToSocketAddrs};
 use std::os::fd::AsRawFd;
 use std::os::unix::fs::OpenOptionsExt;
@@ -31,10 +31,12 @@ pub enum PttSpec {
     Cm108 { path: String, gpio: u8 },
     Cm108Usb { vendor: u16, product: u16, gpio: u8 },
     Rigctld(String),
+    Flrig(String),
     Trusdx,
 }
 
 pub const RIGCTLD_DEFAULT: &str = "127.0.0.1:4532";
+pub const FLRIG_DEFAULT: &str = "127.0.0.1:12345";
 
 impl PttSpec {
     pub fn parse(s: &str) -> Result<Self, String> {
@@ -62,9 +64,10 @@ impl PttSpec {
             }
             "trusdx" if rest.is_empty() => Ok(Self::Trusdx),
             "rigctld" => Ok(Self::Rigctld(if rest.is_empty() { RIGCTLD_DEFAULT.into() } else { rest.into() })),
+            "flrig" => Ok(Self::Flrig(if rest.is_empty() { FLRIG_DEFAULT.into() } else { rest.into() })),
             _ => {
                 let cm108 = if cfg!(target_os = "macos") { "cm108:VID:PID[:GPIO]" } else { "cm108:DEV|VID:PID[:GPIO]" };
-                let mut all = vec!["vox", "rts:DEV", "dtr:DEV", cm108, "rigctld[:HOST:PORT]"];
+                let mut all = vec!["vox", "rts:DEV", "dtr:DEV", cm108, "rigctld[:HOST:PORT]", "flrig[:HOST:PORT]"];
                 if cfg!(feature = "trusdx") {
                     all.push("trusdx");
                 }
@@ -95,6 +98,7 @@ impl PttSpec {
             Self::Cm108 { path, gpio } => Box::new(Cm108::open(path, *gpio)?),
             Self::Cm108Usb { vendor, product, gpio } => cm108_usb(*vendor, *product, *gpio)?,
             Self::Rigctld(a) => Box::new(Rigctld::open(a)?),
+            Self::Flrig(a) => Box::new(Flrig::open(a)?),
             Self::Trusdx => return Err(io::Error::other("--ptt trusdx comes with --audio trusdx")),
         })
     }
@@ -254,6 +258,81 @@ impl Ptt for Rigctld {
 
     fn describe(&self) -> String {
         format!("rigctld at {}", self.addr)
+    }
+}
+
+/// Keys the radio through flrig's XML-RPC server (default port 12345). flrig
+/// owns the CAT port, so this is the way to share one rig with flrig and the
+/// apps that control the radio through it. Each keying is one HTTP POST of a
+/// `rig.set_ptt` call; the connection is not held open between them.
+pub struct Flrig {
+    addr: String,
+}
+
+impl Flrig {
+    pub fn open(addr: &str) -> io::Result<Self> {
+        let mut f = Self { addr: addr.into() };
+        f.set(false)?;
+        Ok(f)
+    }
+
+    fn call(&self, on: bool) -> io::Result<()> {
+        let a = self
+            .addr
+            .to_socket_addrs()?
+            .next()
+            .ok_or_else(|| io::Error::other(format!("{}: no address", self.addr)))?;
+        let mut s = TcpStream::connect_timeout(&a, Duration::from_secs(2))?;
+        s.set_read_timeout(Some(Duration::from_secs(2)))?;
+        s.set_write_timeout(Some(Duration::from_secs(2)))?;
+        let body = format!(
+            "<?xml version=\"1.0\"?><methodCall><methodName>rig.set_ptt</methodName>\
+             <params><param><value><i4>{}</i4></value></param></params></methodCall>",
+            on as u8
+        );
+        let req = format!(
+            "POST /RPC2 HTTP/1.0\r\nHost: {}\r\nUser-Agent: xara\r\nContent-Type: text/xml\r\n\
+             Content-Length: {}\r\nConnection: close\r\n\r\n{body}",
+            self.addr,
+            body.len()
+        );
+        s.write_all(req.as_bytes())?;
+        // flrig closes the socket right after replying, and some stacks turn a
+        // close with unread data into an RST, so a reset once we already have
+        // bytes just means the response is in; only an empty read is fatal.
+        let mut resp = Vec::new();
+        let mut buf = [0u8; 1024];
+        loop {
+            match s.read(&mut buf) {
+                Ok(0) => break,
+                Ok(n) => resp.extend_from_slice(&buf[..n]),
+                Err(e) if e.kind() == io::ErrorKind::ConnectionReset && !resp.is_empty() => break,
+                Err(e) => return Err(e),
+            }
+        }
+        Self::check(&String::from_utf8_lossy(&resp))
+    }
+
+    fn check(resp: &str) -> io::Result<()> {
+        let status = resp.lines().next().unwrap_or("");
+        if !status.split_whitespace().nth(1).is_some_and(|c| c == "200") {
+            return Err(io::Error::other(format!("flrig: bad HTTP response: {status:?}")));
+        }
+        match resp.split_once("\r\n\r\n").map(|(_, b)| b) {
+            Some(b) if b.contains("<fault") => Err(io::Error::other(format!("flrig rig.set_ptt fault: {}", b.trim()))),
+            Some(b) if b.contains("<methodResponse") => Ok(()),
+            _ => Err(io::Error::other("flrig: no XML-RPC response body")),
+        }
+    }
+}
+
+impl Ptt for Flrig {
+    fn set(&mut self, on: bool) -> io::Result<()> {
+        self.call(on)
+    }
+
+    fn describe(&self) -> String {
+        format!("flrig at {}", self.addr)
     }
 }
 
