@@ -71,7 +71,7 @@ container on x86_64:
     --fm narrow|wide        FM mode, narrow vs wide
 
     --radio                 enable radio mode
-    --drive-db D            TX drive (<= 0 dB, default -5)
+    --drive-db D            TX drive (-30 to 0 dB, default -5)
     --ptt [see section]     PTT has a lot of options
 
     --ui-port N             serve web UI on port N (default off)
